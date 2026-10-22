@@ -141,6 +141,7 @@ button,input,textarea{font:inherit}
 .muk-table thead th{background:#eef2f7;color:#475569;font-weight:600;text-align:left;padding:12px 14px;border-bottom:1px solid #e2e8f0}
 .muk-table td{padding:14px;border-bottom:1px solid #f1f5f9;color:#334155;vertical-align:middle}
 .muk-table tr:hover td{background:#f8fafc}
+.muk-row:hover td{background:#eef2ff!important}
 .muk-del{background:none;border:none;color:#ef4444;cursor:pointer;font-size:16px;padding:4px 8px}
 .muk-go{width:32px;height:32px;border-radius:6px;background:var(--teal-btn);border:none;color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
 .muk-go:hover{filter:brightness(.95)}
@@ -238,7 +239,12 @@ button,input,textarea{font:inherit}
     h=h.replace(/\/+$/,'')||'/';
     return h;
   }
-  function go(p){location.hash=p}
+  function go(p){
+    p=String(p||'/');
+    if(p.charAt(0)!=='/') p='/'+p;
+    if(location.hash.replace(/^#/,'')===p){ render(); return; }
+    location.hash=p;
+  }
 
   var slides=[
     {h:'YanMali Ayrıcalıkları Sizi Bekliyor!',p:'Mükelleflerinizin YanMuhasebe verilerine tek panelden erişin.'},
@@ -275,7 +281,7 @@ button,input,textarea{font:inherit}
       '<a class="btn btn-lime btn-lg" href="#/kayit">Hesap Oluştur</a></section>'+
       '<section class="section"><h2>Sık Sorulan Sorular</h2><div class="faq">'+
       faq('YanMali’den hangi bilgilere erişebilirim?','Cari, satış/alış, masraf, fatura, stok, hesap ve rapor özetleri — mükellefin yetki verdiği ölçüde.')+
-      faq('Nasıl mükellef eklerim?','Mükellef YanMuhasebe → YanMali menüsünden sizi davet eder veya siz “Yeni Mükellef Ekle” ile davet gönderirsiniz.')+
+      faq('Nasıl mükellef eklerim?','Mükellef veya siz karşılıklı 6 haneli müşteri numarası ile davet gönderirsiniz. E-posta daveti kullanılmaz.')+
       faq('Ücretli mi?',isFree()?'26.11.2026’ya kadar ücretsizdir.':'Ücretsiz dönem sona erdi; destekten plan sorun.')+
       '</div></section></main>'+
       '<footer class="footer"><div class="footer-inner"><div><div style="font-weight:800;color:#fff;margin-bottom:8px">YanMali</div><div style="font-size:13px">İstanbul / Bayrampaşa</div></div>'+
@@ -360,12 +366,15 @@ button,input,textarea{font:inherit}
 
     var rows=[];
     if(tab==='liste'){
-      all.filter(function(x){ return x.status==='accepted' && String(x.mmMusteriNo)===myNo; }).forEach(function(x){
+      all.filter(function(x){
+        if(x.status!=='accepted') return false;
+        return String(x.mmMusteriNo)===myNo;
+      }).forEach(function(x){
         rows.push({
           id:x.id,
-          no:x.mukMusteriNo||'-',
-          ad:x.mukName||'—',
-          em:x.mukEmail||'—',
+          no:x.mukMusteriNo||x.fromMusteriNo||'-',
+          ad:x.mukName||x.fromName||'—',
+          em:x.mukEmail||x.fromEmail||'—',
           personel:x.atanmisPersonel||'—'
         });
       });
@@ -406,12 +415,12 @@ button,input,textarea{font:inherit}
           ? '<button type="button" class="muk-go" title="Giriş" data-giris="'+r.id+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg></button>'
           : (r.pending==='wait'?'Bekleniyor':'');
         var firma='('+esc(r.no)+') '+esc(r.ad);
-        return '<tr>'+
-          '<td>'+firma+'</td>'+
+        return '<tr class="'+(tab==='liste'?'muk-row':'')+'" '+(tab==='liste'?'data-giris="'+r.id+'" style="cursor:pointer"':'')+'>'+
+          '<td><span style="color:#0f172a;font-weight:600">'+firma+'</span></td>'+
           '<td>'+esc(r.em)+'</td>'+
           '<td>'+esc(r.personel)+'</td>'+
-          '<td style="text-align:center">'+acts+'</td>'+
-          '<td style="text-align:center">'+giris+'</td></tr>';
+          '<td style="text-align:center" onclick="event.stopPropagation()">'+acts+'</td>'+
+          '<td style="text-align:center" onclick="event.stopPropagation()">'+giris+'</td></tr>';
       }).join('');
     }
 
@@ -456,9 +465,57 @@ button,input,textarea{font:inherit}
   }
   function setActiveMuk(m){ sessionStorage.setItem('yanmali_active_muk', JSON.stringify(m||null)); }
 
+  /* Tek seferlik tıklama yakalama — mükellef giriş / menü */
+  if(!window.__ymClickBound){
+    window.__ymClickBound=true;
+    document.addEventListener('click',function(e){
+      var g=e.target.closest&&e.target.closest('[data-giris]');
+      if(g){
+        e.preventDefault();
+        e.stopPropagation();
+        var id=g.getAttribute('data-giris');
+        var inv=readInvites().find(function(x){ return x.id===id; });
+        if(!inv){
+          // accepted listede id ile bulunamazsa satırdan kur
+          toast('Kayıt bulunamadı');
+          return;
+        }
+        setActiveMuk({
+          id:inv.id,
+          no:inv.mukMusteriNo||inv.fromMusteriNo||'',
+          ad:inv.mukName||inv.fromName||'Mükellef',
+          em:inv.mukEmail||inv.fromEmail||''
+        });
+        go('/ws/ozet');
+        return;
+      }
+      var w=e.target.closest&&e.target.closest('[data-ws]');
+      if(w){
+        e.preventDefault();
+        go('/ws/'+w.getAttribute('data-ws'));
+        return;
+      }
+      var bb=e.target.closest&&e.target.closest('#btnBackMuk');
+      if(bb){ e.preventDefault(); go('/mukellefler'); return; }
+    });
+  }
+
+
   function viewWorkspace(menuId){
     var muk=getActiveMuk();
-    if(!muk){ go('/mukellefler'); return '<div></div>'; }
+    if(!muk || !muk.ad){
+      // son çare: kabul edilmiş ilk mükellef
+      try {
+        var s=getSess()||{};
+        var myNo=String(s.musteriNo||'');
+        var inv=(readInvites()||[]).find(function(x){ return x.status==='accepted' && String(x.mmMusteriNo)===myNo; });
+        if(inv){
+          muk={ id:inv.id, no:inv.mukMusteriNo, ad:inv.mukName, em:inv.mukEmail };
+          setActiveMuk(muk);
+        }
+      } catch(e) {}
+    }
+    if(!muk){ setTimeout(function(){ go('/mukellefler'); },0); return '<div class="p-body"><div class="p-card">Mükellef seçilmedi, listeye dönülüyor…</div></div>'; }
     var s=getSess()||{};
     menuId=menuId||'ozet';
     var nav=WS_MENUS.map(function(m){
@@ -512,7 +569,7 @@ button,input,textarea{font:inherit}
       '<div class="hint">Mükellefin <b>6 haneli müşteri numarası</b> ve ad soyadını girin. Mükellef YanMuhasebe’ye girince onay/red penceresini görür.</div>'+
       '<div class="field" style="margin-bottom:12px"><label>Mükellef Müşteri No</label><input id="mukNo" placeholder="Örn: 258963" maxlength="6" inputmode="numeric"></div>'+
       '<div class="field" style="margin-bottom:12px"><label>Ad Soyad / Unvan</label><input id="mukAd" placeholder="Mükellef adı soyadı"></div>'+
-      '<div class="field"><label>E-posta (isteğe bağlı)</label><input id="mukMail" type="email" placeholder="ornek@firma.com"></div>'+
+      '<div class="field"><label>Not (isteğe bağlı)</label><input id="mukMail" placeholder="İsteğe bağlı not"></div>'+
       '</div>'+
       '<div class="modal-f"><button type="button" class="btn btn-outline" id="cancelMuk">Vazgeç</button>'+
       '<button type="button" class="btn btn-teal" id="sendMuk">'+ic('check')+' Gönder</button></div></div></div>';
@@ -520,31 +577,56 @@ button,input,textarea{font:inherit}
 
   function viewCalisanlar(){
     var tab=(location.hash.indexOf('onay')>=0)?'onay':'liste';
+    var s=getSess()||{};
+    var myNo=String(s.musteriNo||'');
+    var all=readInvites().filter(function(x){ return x.kind==='calisan' || x.direction==='mm_to_cal'; });
+    var rows=[];
+    if(tab==='liste'){
+      all.filter(function(x){ return x.status==='accepted' && String(x.mmMusteriNo)===myNo; }).forEach(function(x){
+        rows.push({ id:x.id, no:x.calMusteriNo||'-', ad:x.calName||'—', unvan:x.calUnvan||'—', st:'Aktif' });
+      });
+    } else {
+      all.filter(function(x){ return (x.status==='pending_cal'||x.status==='pending_muk') && String(x.mmMusteriNo)===myNo; }).forEach(function(x){
+        rows.push({ id:x.id, no:x.calMusteriNo||'-', ad:x.calName||'—', unvan:x.calUnvan||'—', st:'Onay bekleniyor', pending:true });
+      });
+    }
+    var body=rows.length?rows.map(function(r){
+      var acts=tab==='liste'
+        ? '<button type="button" class="muk-del" data-del-cal="'+r.id+'" title="Sil"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>'
+        : '';
+      return '<tr><td>('+esc(r.no)+') '+esc(r.ad)+'</td><td>'+esc(r.unvan)+'</td><td>'+esc(r.st)+'</td><td style="text-align:center">'+acts+'</td></tr>';
+    }).join(''):'<tr><td colspan="4" style="padding:32px;text-align:center;color:#94a3b8">'+(tab==='onay'?'Onay bekleyen çalışan yok':'Kayıtlı çalışan yok')+'</td></tr>';
+
     return '<div class="p-shell">'+panelTop('calisanlar')+
       '<div class="p-body"><div class="p-card"><h2>Çalışanlarınız</h2>'+
       '<div class="subtabs">'+
       '<button type="button" class="subtab'+(tab==='liste'?' on':'')+'" data-go="#/calisanlar">Çalışanlarınız</button>'+
       '<button type="button" class="subtab'+(tab==='onay'?' on':'')+'" data-go="#/calisanlar-onay">Onay Bekleyenler</button>'+
       '</div>'+
-      '<div class="info-bar">'+
-      '<div class="info-msg">'+(tab==='onay'
-        ?'Onay bekleyen çalışan tanımı bulunmamaktadır. Davet gönderdiğiniz personeller, aktivasyon işlemi tamamlanana kadar burada görünür.'
-        :'Kayıtlı çalışanınız yok. Ofis personelinizi davet edebilirsiniz.')+'</div>'+
-      '<button type="button" class="btn btn-teal" id="btnYeniCal">'+ic('check')+' Yeni Kullanıcı Davet Et</button>'+
-      '</div></div></div></div>'+
+      '<div class="muk-toolbar">'+
+      '<div class="info-msg" style="flex:1">'+(tab==='onay'
+        ?'Davet ettiğiniz çalışanlar, YanMuhasebe hesabından onaylayana kadar burada görünür.'
+        :'Çalışanları müşteri numarası ile davet edin. Onay sonrası ofis listenizde yer alır.')+'</div>'+
+      '<button type="button" class="btn btn-teal" id="btnYeniCal">'+ic('check')+' Yeni Çalışan Davet Et</button>'+
+      '</div>'+
+      '<div style="overflow-x:auto"><table class="muk-table">'+
+      '<thead><tr><th>Ad Soyad / Müşteri No</th><th>Unvan</th><th>Durum</th><th style="text-align:center">Sil</th></tr></thead>'+
+      '<tbody>'+body+'</tbody></table></div>'+
+      '</div></div></div>'+
       modalCalisan();
   }
+
   function modalCalisan(){
     return '<div class="modal-bg hide" id="modalCal"><div class="modal">'+
-      '<div class="modal-h"><span>Yeni Kullanıcı Davet Et</span><button type="button" class="btn btn-ghost" id="closeCal">'+ic('x')+'</button></div>'+
+      '<div class="modal-h"><span>Yeni Çalışan Davet Et</span><button type="button" class="btn btn-ghost" id="closeCal">'+ic('x')+'</button></div>'+
       '<div class="modal-b">'+
-      '<div class="hint">Ofisinizdeki çalışanları bu ekrandan davet edebilirsiniz. “Gönder” ile e-posta adresine davet linki iletilir.</div>'+
-      '<div class="field" style="margin-bottom:12px"><label>Personelin Adı</label><input id="calAd" placeholder=""></div>'+
-      '<div class="field" style="margin-bottom:12px"><label>Personelin e-posta adresi</label><input id="calMail" type="email"></div>'+
-      '<div class="field"><label>Personelin telefon numarası</label><input id="calTel" value="+90"></div>'+
+      '<div class="hint">Çalışanın <b>6 haneli müşteri numarası</b> ve ad soyadını girin. YanMuhasebe hesabı olan kullanıcı daveti onaylar (mükellef davetiyle aynı mantık).</div>'+
+      '<div class="field" style="margin-bottom:12px"><label>Çalışan Müşteri No</label><input id="calNo" placeholder="Örn: 258963" maxlength="6" inputmode="numeric"></div>'+
+      '<div class="field" style="margin-bottom:12px"><label>Ad Soyad</label><input id="calAd" placeholder="Çalışan adı soyadı"></div>'+
+      '<div class="field"><label>Unvan (isteğe bağlı)</label><input id="calUnvan" placeholder="Muhasebe personeli"></div>'+
       '</div>'+
       '<div class="modal-f"><button type="button" class="btn btn-outline" id="cancelCal">Vazgeç</button>'+
-      '<button type="button" class="btn btn-teal" id="sendCal">'+ic('check')+' Gönder</button></div></div></div>';
+      '<button type="button" class="btn btn-teal" id="sendCal">'+ic('check')+' Davet Gönder</button></div></div></div>';
   }
 
   function viewSifre(){
@@ -646,7 +728,34 @@ button,input,textarea{font:inherit}
       var b=document.getElementById(id);if(b&&mc)b.addEventListener('click',function(){mc.classList.add('hide')});
     });
     var sc=document.getElementById('sendCal');
-    if(sc)sc.addEventListener('click',function(){toast('Davet kaydedildi');if(mc)mc.classList.add('hide')});
+    if(sc)sc.addEventListener('click',function(){
+      var s=getSess()||{};
+      var no=((document.getElementById('calNo')||{}).value||'').trim();
+      var ad=((document.getElementById('calAd')||{}).value||'').trim();
+      var un=((document.getElementById('calUnvan')||{}).value||'').trim();
+      if(!/^\d{6}$/.test(no)){ toast('6 haneli müşteri no girin'); return; }
+      if(!ad){ toast('Ad soyad girin'); return; }
+      if(String(s.musteriNo)===no){ toast('Kendinizi davet edemezsiniz'); return; }
+      var list=readInvites();
+      var exists=list.some(function(x){ return x.kind==='calisan' && x.status!=='rejected' && String(x.calMusteriNo)===no && String(x.mmMusteriNo)===String(s.musteriNo); });
+      if(exists){ toast('Bu çalışan için zaten davet var'); return; }
+      list.push({
+        id:uidInv(),
+        kind:'calisan',
+        direction:'mm_to_cal',
+        mmMusteriNo:String(s.musteriNo||''),
+        mmName:s.name||'',
+        calMusteriNo:no,
+        calName:ad,
+        calUnvan:un,
+        status:'pending_cal',
+        created:new Date().toISOString()
+      });
+      writeInvites(list);
+      toast('Davet gönderildi — çalışan YanMuhasebe girince onaylar');
+      if(mc) mc.classList.add('hide');
+      render();
+    });
 
     var sp=document.getElementById('btnSavePass');
     if(sp)sp.addEventListener('click',function(){toast('Şifre güncellendi')});
@@ -716,6 +825,17 @@ button,input,textarea{font:inherit}
     });
     var bb=document.getElementById('btnBackMuk');
     if(bb) bb.addEventListener('click',function(){ go('/mukellefler'); });
+
+    
+    document.querySelectorAll('[data-del-cal]').forEach(function(b){
+      b.addEventListener('click',function(){
+        if(!confirm('Çalışan bağlantısı silinsin mi?')) return;
+        var id=b.getAttribute('data-del-cal');
+        writeInvites(readInvites().filter(function(x){ return x.id!==id; }));
+        toast('Silindi');
+        render();
+      });
+    });
 
     document.querySelectorAll('[data-nr]').forEach(function(b){
       b.addEventListener('click',function(){
