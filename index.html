@@ -205,7 +205,9 @@ button,input,textarea{font:inherit}
 <body>
 <div id="app"></div>
 <div class="toast" id="toast"></div>
+
 <script>
+
 (function(){
   var FREE_UNTIL = new Date('2026-11-26T23:59:59');
   function toast(m){var e=document.getElementById('toast');e.textContent=m;e.classList.add('show');setTimeout(function(){e.classList.remove('show')},2600)}
@@ -1260,24 +1262,35 @@ function viewWorkspace(menuId){
     var lf=document.getElementById('loginForm');
     if(lf)lf.addEventListener('submit',function(e){
       e.preventDefault();
-      var em=(document.getElementById('loginEmail').value||'').trim().toLowerCase();
-      var pass=(document.getElementById('loginPass').value||'');
-      if(!em){ toast('E-posta girin'); return; }
-      var u=findUserByEmail(em);
-      if(!u){ toast('Hesap bulunamadı — kayıt olun'); go('/kayit'); return; }
-      if(u.pass && pass && u.pass!==pass){ toast('Şifre hatalı'); return; }
-      setSess({
-        name:u.name||u.firmaSahibi||em.split('@')[0],
-        email:em,
-        musteriNo:u.musteriNo,
-        phone:u.phone||'',
-        sehir:u.sehir||'',
-        ilce:u.ilce||'',
-        firmaSahibi:u.firmaSahibi||'',
-        pass:u.pass||pass
-      });
-      toast('Giriş yapıldı · No: '+(u.musteriNo||''));
-      go('/mukellefler');
+      try {
+        var em=(document.getElementById('loginEmail').value||'').trim().toLowerCase();
+        var pass=(document.getElementById('loginPass').value||'');
+        if(!em){ toast('E-posta girin'); return; }
+        // Yerel kullanıcı listesi
+        var list=[];
+        try { list=JSON.parse(localStorage.getItem('yanmali_users_v1')||'[]'); } catch(err) { list=[]; }
+        var u=null;
+        for (var i=0;i<list.length;i++){
+          if (String(list[i].email||'').toLowerCase()===em) { u=list[i]; break; }
+        }
+        if(!u){ toast('Hesap bulunamadı — kayıt olun'); go('/kayit'); return; }
+        if(u.pass && pass && u.pass!==pass){ toast('Şifre hatalı'); return; }
+        setSess({
+          name:u.name||u.firmaSahibi||em.split('@')[0],
+          email:em,
+          musteriNo:u.musteriNo,
+          phone:u.phone||'',
+          sehir:u.sehir||'',
+          ilce:u.ilce||'',
+          firmaSahibi:u.firmaSahibi||'',
+          pass:u.pass||pass
+        });
+        toast('Giriş yapıldı · No: '+(u.musteriNo||''));
+        go('/mukellefler');
+      } catch (err) {
+        console.error(err);
+        toast('Giriş hatası');
+      }
     });
     var rf=document.getElementById('regForm');
     if(rf)rf.addEventListener('submit',function(e){
@@ -1298,8 +1311,14 @@ function viewWorkspace(menuId){
       if(!tip){ toast('Kullanıcı tipi seçin'); return; }
       if(p1.length<8){ toast('Şifre en az 8 karakter'); return; }
       if(p1!==p2){ toast('Şifreler eşleşmiyor'); return; }
-      if(findUserByEmail(em)){ toast('Bu e-posta kayıtlı — giriş yapın'); go('/giris'); return; }
-      var profile=saveUserProfile({
+      var listU=[];
+      try { listU=JSON.parse(localStorage.getItem('yanmali_users_v1')||'[]'); } catch(err) { listU=[]; }
+      var exists=listU.some(function(x){ return String(x.email||'').toLowerCase()===em; });
+      if(exists){ toast('Bu e-posta kayıtlı — giriş yapın'); go('/giris'); return; }
+      var no=String(Math.floor(100000+Math.random()*900000));
+      var used={}; listU.forEach(function(x){ used[String(x.musteriNo)]=true; });
+      while(used[no]) no=String(Math.floor(100000+Math.random()*900000));
+      var profile={
         name:name,
         firmaSahibi:firma||name,
         kullaniciTipi:tip,
@@ -1307,8 +1326,12 @@ function viewWorkspace(menuId){
         phone:phone,
         sehir:sehir,
         ilce:ilce,
-        pass:p1
-      });
+        pass:p1,
+        musteriNo:no,
+        created:new Date().toISOString()
+      };
+      listU.push(profile);
+      try { localStorage.setItem('yanmali_users_v1', JSON.stringify(listU)); } catch(err) {}
       setSess(profile);
       toast('Kayıt tamam · Müşteri No: '+profile.musteriNo);
       go('/mukellefler');
