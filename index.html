@@ -232,9 +232,66 @@ button,input,textarea{font:inherit}
   }
 
   /* session mock for UI */
+
   function genMusteriNo(){
     return String(Math.floor(100000 + Math.random() * 900000));
   }
+  var USERS_KEY = 'yanmali_users_v1';
+  function readUsers(){
+    try { return JSON.parse(localStorage.getItem(USERS_KEY) || '[]'); } catch(e) { return []; }
+  }
+  function writeUsers(arr){
+    try { localStorage.setItem(USERS_KEY, JSON.stringify(arr || [])); } catch(e) {}
+  }
+  function findUserByEmail(em){
+    em = String(em || '').trim().toLowerCase();
+    if (!em) return null;
+    var list = readUsers();
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].email || '').toLowerCase() === em) return list[i];
+    }
+    return null;
+  }
+  function saveUserProfile(data){
+    data = data || {};
+    var em = String(data.email || '').trim().toLowerCase();
+    var list = readUsers();
+    var existing = null;
+    for (var i = 0; i < list.length; i++) {
+      if (String(list[i].email || '').toLowerCase() === em) { existing = list[i]; break; }
+    }
+    var no = (existing && existing.musteriNo) || data.musteriNo || genMusteriNo();
+    // benzersiz no
+    var used = {};
+    list.forEach(function(u){ used[String(u.musteriNo)] = true; });
+    while (used[no] && (!existing || String(existing.musteriNo) !== String(no))) {
+      no = genMusteriNo();
+    }
+    var profile = {
+      name: data.name || '',
+      firmaSahibi: data.firmaSahibi || data.name || '',
+      kullaniciTipi: data.kullaniciTipi || 'mali_musavir',
+      email: em,
+      phone: data.phone || '',
+      sehir: data.sehir || '',
+      ilce: data.ilce || '',
+      pass: data.pass || '',
+      musteriNo: String(no),
+      created: (existing && existing.created) || new Date().toISOString()
+    };
+    if (existing) {
+      for (var i = 0; i < list.length; i++) {
+        if (String(list[i].email || '').toLowerCase() === em) { list[i] = profile; break; }
+      }
+    } else {
+      list.push(profile);
+    }
+    writeUsers(list);
+    return profile;
+  }
+  window.findUserByEmail = findUserByEmail;
+  window.saveUserProfile = saveUserProfile;
+
   function setSess(s){
     if(s && !s.musteriNo) s.musteriNo = genMusteriNo();
     localStorage.setItem('yanmali_ui_sess', JSON.stringify(s));
